@@ -2,184 +2,235 @@
 <html lang="zh-Hant">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>比卡超魔法錢包 - 契仔 Ziv 4 歲生日快樂</title>
-    <!-- Tailwind CSS 4 & Lucide Icons -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>比卡超魔法錢包 - Ziv 4歲生日快樂</title>
+
+    <!-- 穩定 CDN 連結 -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/lucide@latest"></script>
-    <!-- React & Framer Motion (via ESM) -->
-    <script type="importmap">
-    {
-      "imports": {
-        "react": "https://esm.sh/react@19",
-        "react-dom": "https://esm.sh/react-dom@19/client",
-        "motion": "https://esm.sh/framer-motion@12",
-        "canvas-confetti": "https://esm.sh/canvas-confetti@1.9.3"
-      }
-    }
-    </script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
-        body { font-family: 'Inter', sans-serif; background-color: #1a1a2e; overflow-x: hidden; }
-        .glass { background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 1.5rem; }
+        body { margin: 0; background-color: #1a1a2e; font-family: 'Inter', sans-serif; color: white; -webkit-tap-highlight-color: transparent; }
+        .glass { background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 1.5rem; }
         .glow-gold { box-shadow: 0 0 20px rgba(250, 204, 21, 0.3); }
-        .backface-hidden { backface-visibility: hidden; -webkit-backface-visibility: hidden; }
-        .preserve-3d { transform-style: preserve-3d; }
-        .perspective-1000 { perspective: 1000px; }
-        .star { position: absolute; background: white; border-radius: 50%; opacity: 0.3; animation: twinkle 3s infinite; }
-        @keyframes twinkle { 0%, 100% { opacity: 0.3; } 50% { opacity: 0.8; } }
+        .card-inner { transition: transform 0.6s; transform-style: preserve-3d; cursor: pointer; position: relative; width: 100%; height: 100%; }
+        .is-flipped { transform: rotateY(180deg); }
+        .backface-hidden { backface-visibility: hidden; -webkit-backface-visibility: hidden; position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+        .front { transform: rotateY(180deg); }
+        /* 簡單動畫 */
+        @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+        .float-anim { animation: float 3s infinite ease-in-out; }
     </style>
 </head>
 <body>
-    <div id="root"></div>
+    <div id="root">
+        <!-- 初始 Loading 提示 -->
+        <div style="height: 100vh; display: flex; align-items: center; justify-content: center; background: #1a1a2e; color: #666;">
+            載入魔法世界中...
+        </div>
+    </div>
 
-    <script type="module">
-        import React, { useState, useEffect, useMemo, useCallback } from 'react';
-        import { createRoot } from 'react-dom';
-        import { motion, AnimatePresence } from 'motion';
-        import confetti from 'canvas-confetti';
+    <script type="text/babel">
+        const { useState, useEffect, useMemo, useCallback } = React;
 
-        // --- 資源連結 (PokeAPI 原始連結) ---
-        const PIKACHU_IMG = "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/25.png"; 
+        console.log("🚀 [System] 魔法錢包程式正在啟動...");
+
+        // --- 穩定圖片資源 ---
+        const PIKACHU_IMG = "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/25.png";
         const POKEBALL_IMG = "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/poke-ball.png";
         const GREATBALL_IMG = "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/great-ball.png";
         const ULTRABALL_IMG = "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/ultra-ball.png";
-        const CAKE_IMG = "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/rare-candy.png"; 
-        const STORAGE_KEY = 'pikachu_wallet_save';
+        const CAKE_IMG = "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/rare-candy.png";
+        const STORAGE_KEY = 'ziv_magic_wallet_v2';
 
-        // --- 現金券數據庫 ---
+        // 圖片報錯處理：如果圖片讀取失敗，顯示一個黃色圓圈
+        const ImgWithFallback = ({ src, alt, className, style }) => {
+            const [error, setError] = useState(false);
+            if (error) {
+                return <div className={`flex items-center justify-center bg-yellow-400 rounded-full ${className}`} style={style}><span className="text-[10px]">Pika</span></div>;
+            }
+            return <img src={src} alt={alt} className={className} style={style} referrerPolicy="no-referrer" onError={() => { console.log(`⚠️ [Image] 載入失敗: ${src}`); setError(true); }} />;
+        };
+
         const COUPON_DATA = [
-            { id: 1, color: 'bg-[#f8e3a1]', text: 'text-[#8b6508]', icon: '⚡', serial: '2026042401' },
-            { id: 2, color: 'bg-[#c1e1c1]', text: 'text-[#1b5e20]', icon: '⚽', serial: '2026042402' },
-            { id: 3, color: 'bg-[#c1d3e1]', text: 'text-[#0d47a1]', icon: '🚗', serial: '2026042403' },
-            { id: 4, color: 'bg-[#c1e1dc]', text: 'text-[#006064]', icon: '✈️', serial: '2026042404' },
-            { id: 5, color: 'bg-[#e1c1c1]', text: 'text-[#b71c1c]', icon: '🍰', serial: '2026042405' },
-            { id: 6, color: 'bg-[#d1c1e1]', text: 'text-[#4a148c]', icon: '🏀', serial: '2026042406' },
-            { id: 7, color: 'bg-[#f1d1c1]', text: 'text-[#e65100]', icon: '🐱', serial: '2026042407' },
-            { id: 8, color: 'bg-[#f1c1d1]', text: 'text-[#880e4f]', icon: '👑', serial: '2026042408' },
-            { id: 9, color: 'bg-[#d9c8b3]', text: 'text-[#3e2723]', icon: '🏆', serial: '2026042409' },
-            { id: 10, color: 'bg-[#d1d1d1]', text: 'text-[#212121]', icon: '🏁', serial: '2026042410' },
+            { id: 1, color: 'bg-[#f8e3a1]', text: 'text-[#8b6508]', icon: '⚡' },
+            { id: 2, color: 'bg-[#c1e1c1]', text: 'text-[#1b5e20]', icon: '⚽' },
+            { id: 3, color: 'bg-[#c1d3e1]', text: 'text-[#0d47a1]', icon: '🚗' },
+            { id: 4, color: 'bg-[#c1e1dc]', text: 'text-[#006064]', icon: '✈️' },
+            { id: 5, color: 'bg-[#e1c1c1]', text: 'text-[#b71c1c]', icon: '🍰' },
+            { id: 6, color: 'bg-[#d1c1e1]', text: 'text-[#4a148c]', icon: '🏀' },
+            { id: 7, color: 'bg-[#f1d1c1]', text: 'text-[#e65100]', icon: '🐱' },
+            { id: 8, color: 'bg-[#f1c1d1]', text: 'text-[#880e4f]', icon: '👑' },
+            { id: 9, color: 'bg-[#d9c8b3]', text: 'text-[#3e2723]', icon: '🏆' },
+            { id: 10, color: 'bg-[#d1d1d1]', text: 'text-[#212121]', icon: '🏁' },
         ];
 
-        // --- 主程式開始 ---
         function App() {
             const [gameState, setGameState] = useState('GIFT');
             const [saveData, setSaveData] = useState({ earned: 0, spent: 0, levelsCleared: {} });
 
+            // 讀取存檔
             useEffect(() => {
                 const saved = localStorage.getItem(STORAGE_KEY);
-                if (saved) setSaveData(JSON.parse(saved));
+                if (saved) {
+                    const parsed = JSON.parse(saved);
+                    console.log("💾 [Storage] 讀取存檔成功:", parsed);
+                    setSaveData(parsed);
+                }
             }, []);
 
+            // 儲存存檔
             useEffect(() => {
                 localStorage.setItem(STORAGE_KEY, JSON.stringify(saveData));
             }, [saveData]);
 
-            const addOneCoupon = () => {
-                setSaveData(prev => {
-                    if (prev.earned >= 10) return prev;
-                    return { ...prev, earned: prev.earned + 1 };
+            // 獎勵機制
+            const addOneCoupon = useCallback(() => {
+                console.log("✨ [Game] 獲得一張魔法券!");
+                setSaveData(prev => ({
+                    ...prev,
+                    earned: Math.min(10, prev.earned + 1)
+                }));
+                confetti({
+                    particleCount: 80,
+                    spread: 60,
+                    origin: { y: 0.7 },
+                    colors: ['#facc15', '#ef4444', '#ffffff']
                 });
-                confetti({ particleCount: 50, spread: 40, origin: { y: 0.7 }, colors: ['#FFDE00', '#FF0000'] });
-            };
+            }, []);
 
             const redeemCoupon = () => {
                 if (saveData.earned - saveData.spent > 0) {
-                    setSaveData(prev => ({ ...prev, spent: prev.spent + 1 }));
-                    confetti({ particleCount: 150, spread: 100, origin: { y: 0.6 } });
-                    if (saveData.spent + 1 >= 10) setTimeout(() => setGameState('FINAL'), 2000);
+                    console.log("🎟️ [Wallet] 兌換成功!");
+                    setSaveData(prev => {
+                        const newSpent = prev.spent + 1;
+                        if (newSpent >= 10) setTimeout(() => setGameState('FINAL'), 1000);
+                        return { ...prev, spent: newSpent };
+                    });
+                    confetti({ particleCount: 150, zIndex: 1000 });
+                }
+            };
+
+            const changeState = (s) => {
+                console.log(`📍 [Nav] 切換至頁面: ${s}`);
+                setGameState(s);
+            };
+
+            // 根據 gameState 渲染組件
+            const renderContent = () => {
+                switch(gameState) {
+                    case 'GIFT': return <GiftIntro onOpen={() => changeState('MAP')} />;
+                    case 'MAP': return <GameMap saveData={saveData} onSelect={changeState} onOpenWallet={() => changeState('WALLET')} />;
+                    case 'LEVEL1': return <Level1Reaction onBack={() => changeState('MAP')} onEarn={addOneCoupon} onWin={() => {
+                        setSaveData(p => ({...p, levelsCleared: {...p.levelsCleared, 1: true}}));
+                        changeState('MAP');
+                    }} />;
+                    case 'LEVEL2': return <Level2Memory onBack={() => changeState('MAP')} onEarn={addOneCoupon} onWin={() => {
+                        setSaveData(p => ({...p, levelsCleared: {...p.levelsCleared, 2: true}}));
+                        changeState('MAP');
+                    }} />;
+                    case 'LEVEL3': return <Level3Eye onBack={() => changeState('MAP')} onEarn={addOneCoupon} onWin={() => {
+                        setSaveData(p => ({...p, levelsCleared: {...p.levelsCleared, 3: true}}));
+                        changeState('MAP');
+                    }} />;
+                    case 'WALLET': return <WalletView saveData={saveData} onBack={() => changeState('MAP')} onRedeem={redeemCoupon} />;
+                    case 'FINAL': return <FinalView />;
+                    default: return <GiftIntro onOpen={() => changeState('MAP')} />;
                 }
             };
 
             return (
-                <div className="min-h-screen bg-[#1a1a2e] bg-gradient-to-br from-[#1a1a2e] via-[#16213e] to-[#0f3460] text-white flex flex-col relative overflow-hidden">
-                    <AnimatePresence mode="wait">
-                        {gameState === 'GIFT' && <GiftIntro onOpen={() => setGameState('MAP')} />}
-                        {gameState === 'MAP' && <GameMap saveData={saveData} onSelectLevel={setGameState} onOpenWallet={() => setGameState('WALLET')} />}
-                        {gameState === 'LEVEL1' && <Level1Reaction onBack={() => setGameState('MAP')} onEarnCoupon={addOneCoupon} onWin={() => { setSaveData(p => ({...p, levelsCleared: {...p.levelsCleared, 1: true}})); setGameState('MAP'); }} />}
-                        {gameState === 'LEVEL2' && <Level2Memory onBack={() => setGameState('MAP')} onEarnCoupon={addOneCoupon} onWin={() => { setSaveData(p => ({...p, levelsCleared: {...p.levelsCleared, 2: true}})); setGameState('MAP'); }} />}
-                        {gameState === 'LEVEL3' && <Level3Eye onBack={() => setGameState('MAP')} onEarnCoupon={addOneCoupon} onWin={() => { setSaveData(p => ({...p, levelsCleared: {...p.levelsCleared, 3: true}})); setGameState('MAP'); }} />}
-                        {gameState === 'WALLET' && <WalletView saveData={saveData} onBack={() => setGameState('MAP')} onRedeem={redeemCoupon} />}
-                        {gameState === 'FINAL' && <FinalView />}
-                    </AnimatePresence>
+                <div className="min-h-screen bg-[#1a1a2e] bg-gradient-to-br from-[#1a1a2e] via-[#16213e] to-[#0f3460] overflow-hidden select-none">
+                    {renderContent()}
                 </div>
             );
         }
 
-        // --- 子組件: 禮物起始 ---
+        // --- 組件: 開場禮物盒 ---
         function GiftIntro({ onOpen }) {
             return (
-                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, scale: 2 }} className="fixed inset-0 flex flex-col items-center justify-center p-6 bg-black/50 backdrop-blur-md z-50">
-                    <motion.div animate={{ rotate: [0, -5, 5, 0], scale: [1, 1.1, 1] }} transition={{ repeat: Infinity, duration: 1.5 }} onClick={onOpen} className="cursor-pointer">
-                        <div className="w-56 h-56 bg-red-600 rounded-2xl border-4 border-white shadow-[0_0_50px_rgba(255,0,0,0.4)] flex items-center justify-center relative">
-                            <div className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-8 bg-yellow-400 border-x-2 border-white" />
-                            <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2 h-8 bg-yellow-400 border-y-2 border-white" />
-                            <span className="text-6xl">🎁</span>
+                <div className="fixed inset-0 flex flex-col items-center justify-center p-6 bg-black/60 backdrop-blur-xl z-50">
+                    <div className="float-anim cursor-pointer group" onClick={onOpen}>
+                        <div className="w-56 h-56 bg-red-600 rounded-2xl border-4 border-white shadow-[0_0_50px_rgba(255,0,0,0.5)] flex items-center justify-center relative active:scale-95 transition-transform overflow-hidden">
+                            <div className="absolute inset-0 bg-yellow-400 w-8 mx-auto border-x-2 border-white"></div>
+                            <div className="absolute inset-x-0 h-8 my-auto bg-yellow-400 border-y-2 border-white"></div>
+                            <span className="text-7xl drop-shadow-lg relative z-10">🎁</span>
                         </div>
-                    </motion.div>
-                    <h1 className="mt-10 text-4xl font-black text-center italic tracking-tighter">契仔生日快樂!<br/><span className="text-yellow-400 text-2xl">點擊打開魔法驚喜</span></h1>
-                </motion.div>
+                    </div>
+                    <h1 className="mt-10 text-4xl font-black text-center italic tracking-tighter text-white">契仔 Ziv<br/><span className="text-yellow-400 text-3xl">4 歲生日快樂!</span></h1>
+                    <p className="mt-4 text-white/60 font-bold uppercase tracking-[0.2em] text-sm">點擊打開魔法驚喜</p>
+                </div>
             );
         }
 
-        // --- 子組件: 地圖 ---
-        function GameMap({ saveData, onSelectLevel, onOpenWallet }) {
+        // --- 組件: 遊戲地圖 ---
+        function GameMap({ saveData, onSelect, onOpenWallet }) {
             const levels = [
-                { id: 'LEVEL1', title: '反應挑戰', icon: '🏃', desc: '考考你反應!' },
-                { id: 'LEVEL2', title: '記憶大挑战', icon: '🧠', desc: '找出成對卡片!' },
-                { id: 'LEVEL3', title: '森林尋寶', icon: '🔍', desc: '找出閃閃球!' }
+                { id: 'LEVEL1', title: '反應挑戰', icon: '⚡', color: 'border-yellow-400' },
+                { id: 'LEVEL2', title: '記憶挑戰', icon: '🧠', color: 'border-blue-400' },
+                { id: 'LEVEL3', title: '森林尋寶', icon: '🔍', color: 'border-green-400' }
             ];
+            const available = saveData.earned - saveData.spent;
             return (
-                <div className="p-6 flex flex-col h-full max-w-lg mx-auto w-full pt-20">
+                <div className="p-6 pt-20 max-w-lg mx-auto flex flex-col h-screen">
+                    {/* Header */}
                     <div className="flex justify-between items-center mb-10 glass p-5 glow-gold">
                         <div className="flex items-center gap-3">
-                            <img src={PIKACHU_IMG} referrerPolicy="no-referrer" className="w-12 h-12" />
+                            <div className="w-12 h-12 bg-yellow-400 rounded-full flex items-center justify-center overflow-hidden border-2 border-white shadow-md">
+                                <ImgWithFallback src={PIKACHU_IMG} className="w-10 h-10" />
+                            </div>
                             <div>
-                                <h2 className="text-xl font-black italic">魔法錢包</h2>
-                                <p className="text-[10px] text-yellow-400 font-bold">Ziv 4歲限定版</p>
+                                <h2 className="text-xl font-black italic tracking-tighter">比卡超錢包</h2>
+                                <p className="text-[10px] text-yellow-400 font-bold uppercase">Magic Collector</p>
                             </div>
                         </div>
-                        <div onClick={onOpenWallet} className="text-right cursor-pointer bg-white/5 px-4 py-2 rounded-xl">
-                            <p className="text-2xl font-black text-yellow-400 leading-none">{saveData.earned - saveData.spent} / 10</p>
-                            <p className="text-[8px] uppercase font-bold opacity-60">可用數量</p>
+                        <div onClick={onOpenWallet} className="cursor-pointer text-right bg-white/5 px-4 py-2 rounded-xl">
+                            <p className="text-2xl font-black text-yellow-400 leading-none">{available}</p>
+                            <p className="text-[8px] uppercase font-bold opacity-50">可用卡券</p>
                         </div>
                     </div>
-                    <div className="flex-1 flex flex-col gap-6 justify-center">
-                        {levels.map((lvl, idx) => {
-                            const isCleared = saveData.levelsCleared[idx + 1];
+
+                    <div className="flex-1 flex flex-col gap-5 justify-center">
+                        {levels.map((lvl, i) => {
+                            const isCleared = saveData.levelsCleared[i+1];
                             return (
-                                <motion.div key={lvl.id} whileTap={{ scale: 0.95 }} onClick={() => !isCleared && onSelectLevel(lvl.id)} className={`glass p-6 flex items-center gap-6 cursor-pointer ${isCleared ? 'opacity-40 grayscale' : 'hover:bg-white/20 border-yellow-400/30'}`}>
-                                    <span className="text-5xl">{lvl.icon}</span>
+                                <div key={lvl.id} onClick={() => !isCleared && onSelect(lvl.id)} className={`glass p-6 flex items-center gap-6 cursor-pointer transform active:scale-95 transition-all ${isCleared ? 'opacity-40 grayscale pointer-events-none' : `hover:bg-white/20 border-l-8 ${lvl.color}`}`}>
+                                    <span className="text-4xl">{lvl.icon}</span>
                                     <div>
-                                        <h3 className="text-xl font-black uppercase italic">關卡 {idx + 1}</h3>
-                                        <p className="text-xs font-bold text-blue-300 uppercase">{lvl.title}</p>
+                                        <h3 className="text-xl font-black italic uppercase">關卡 {i+1}</h3>
+                                        <p className="text-xs text-blue-300 font-bold tracking-widest">{lvl.title}</p>
                                     </div>
-                                    <div className="ml-auto w-8 h-8 rounded-full border-2 border-white/20 flex items-center justify-center">
-                                       {isCleared ? '✅' : '🔒'}
-                                    </div>
-                                </motion.div>
+                                    <div className="ml-auto text-2xl">{isCleared ? '✅' : '▶️'}</div>
+                                </div>
                             );
                         })}
                     </div>
+
+                    <div className="mt-auto mb-6 text-center">
+                        <button onClick={onOpenWallet} className="w-full py-4 glass bg-yellow-400 text-black font-black uppercase italic tracking-widest shadow-xl">進入錢包兌換獎勵</button>
+                    </div>
                 </div>
             );
         }
 
-        // --- 關卡 1: 反應挑戰 ---
-        function Level1Reaction({ onBack, onWin, onEarnCoupon }) {
+        // --- 組件: 關卡 1 (反應) ---
+        function Level1Reaction({ onBack, onWin, onEarn }) {
             const [score, setScore] = useState(0);
-            const [couponsEarned, setCouponsEarned] = useState(0);
             const [active, setActive] = useState(null);
-            
+            const [earnedInLevel, setEarnedInLevel] = useState(0);
+
             useEffect(() => {
                 let timer;
                 const spawn = () => {
-                    setActive(Math.floor(Math.random() * 6));
+                    setActive(Math.floor(Math.random() * 4));
                     timer = setTimeout(() => {
                         setActive(null);
-                        const nextSpawn = Math.random() * 800 + 400;
-                        timer = setTimeout(spawn, nextSpawn);
-                    }, 900);
+                        timer = setTimeout(spawn, Math.random() * 1000 + 400);
+                    }, 1000);
                 };
                 spawn();
                 return () => clearTimeout(timer);
@@ -187,188 +238,212 @@
 
             useEffect(() => {
                 const thresholds = [5, 10, 15];
-                if (score > 0 && thresholds.includes(score) && couponsEarned < thresholds.indexOf(score) + 1) {
-                    onEarnCoupon();
-                    setCouponsEarned(p => p + 1);
+                if (score > 0 && thresholds.includes(score) && earnedInLevel < thresholds.indexOf(score) + 1) {
+                    onEarn();
+                    setEarnedInLevel(p => p + 1);
                 }
-                if (score >= 15) setTimeout(onWin, 800);
+                if (score >= 15) setTimeout(onWin, 500);
             }, [score]);
 
             return (
-                <div className="fixed inset-0 p-6 flex flex-col items-center z-40 bg-[#16213e]">
-                    <div className="text-center mb-10 pt-10">
-                        <h2 className="text-4xl font-black italic mb-2 tracking-tighter">反應挑戰 ({couponsEarned}/3)</h2>
-                        <div className="glass px-10 py-3 text-yellow-400 text-3xl font-black uppercase tracking-widest">SCORE: {score}</div>
+                <div className="fixed inset-0 p-6 flex flex-col bg-[#16213e] z-40">
+                    <div className="text-center mt-12 mb-8">
+                        <h2 className="text-4xl font-black italic mb-2 tracking-tighter">反應挑戰</h2>
+                        <p className="text-blue-300 text-[10px] font-bold uppercase mb-4 tracking-widest">每拿 5 分獲獎 (拿足 15 分過關)</p>
+                        <div className="glass inline-block px-10 py-3 text-yellow-400 font-black text-3xl glow-gold leading-none">SCORE: {score}</div>
                     </div>
-                    <div className="grid grid-cols-2 gap-6 w-full max-w-xs flex-1 content-center">
-                        {[0,1,2,3,4,5].map(i => (
+                    <div className="grid grid-cols-2 gap-8 w-full max-w-xs mx-auto flex-1 content-center">
+                        {[0,1,2,3].map(i => (
                             <div key={i} className="relative h-28 flex items-center justify-center">
-                                <img src={POKEBALL_IMG} referrerPolicy="no-referrer" className="w-16 opacity-20 grayscale brightness-50" />
-                                <AnimatePresence>
-                                    {active === i && (
-                                        <motion.img initial={{ y: 20, scale: 0, opacity: 0 }} animate={{ y: -30, scale: 1.2, opacity: 1 }} exit={{ y: 20, scale: 0, opacity: 0 }} 
-                                        src={PIKACHU_IMG} referrerPolicy="no-referrer" onClick={() => { setScore(s => s + 1); setActive(null); }} className="absolute w-24 z-10 cursor-pointer drop-shadow-2xl" />
-                                    )}
-                                </AnimatePresence>
+                                <ImgWithFallback src={POKEBALL_IMG} className="w-16 opacity-10 grayscale" />
+                                {active === i && (
+                                    <div key={i} onClick={() => { setScore(s => s + 1); setActive(null); }} className="absolute cursor-pointer flex items-center justify-center">
+                                         <ImgWithFallback src={PIKACHU_IMG} className="w-24 drop-shadow-2xl animate-bounce" />
+                                    </div>
+                                )}
                             </div>
                         ))}
                     </div>
-                    <button onClick={onBack} className="mb-10 text-white/40 font-bold uppercase tracking-widest text-xs">退出</button>
+                    <button onClick={onBack} className="mb-10 text-white/40 font-bold text-xs uppercase self-center p-4">← 退出</button>
                 </div>
             );
         }
 
-        // --- 關卡 2: 記憶挑戰 ---
-        function Level2Memory({ onBack, onWin, onEarnCoupon }) {
-            const cards = useMemo(() => {
-                const raw = [PIKACHU_IMG, POKEBALL_IMG, GREATBALL_IMG, ULTRABALL_IMG, CAKE_IMG, "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/star-piece.png"];
-                return [...raw, ...raw].sort(() => Math.random() - 0.5).map((img, i) => ({ id: i, img }));
-            }, []);
+        // --- 組件: 關卡 2 (記憶) ---
+        function Level2Memory({ onBack, onWin, onEarn }) {
+            const [cards, setCards] = useState([]);
             const [flipped, setFlipped] = useState([]);
             const [solved, setSolved] = useState([]);
-            const [couponsEarned, setCouponsEarned] = useState(0);
+            const [earnedInLevel, setEarnedInLevel] = useState(0);
+
+            useEffect(() => {
+                const images = [PIKACHU_IMG, POKEBALL_IMG, GREATBALL_IMG, ULTRABALL_IMG, CAKE_IMG, "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/items/star-piece.png"];
+                const fullCards = [...images, ...images].sort(() => Math.random() - 0.5).map((img, i) => ({ id: i, img }));
+                setCards(fullCards);
+            }, []);
 
             useEffect(() => {
                 if (flipped.length === 2) {
                     const [a, b] = flipped;
                     if (cards[a].img === cards[b].img) {
-                        setSolved(p => [...p, a, b]);
+                        setSolved(p => {
+                            const newSolved = [...p, a, b];
+                            const pairs = newSolved.length / 2;
+                            if (pairs % 2 === 0 && pairs <= 6 && earnedInLevel < pairs / 2) {
+                                onEarn();
+                                setEarnedInLevel(prev => prev + 1);
+                            }
+                            if (newSolved.length === 12) setTimeout(onWin, 1000);
+                            return newSolved;
+                        });
                         setFlipped([]);
-                        const pairs = (solved.length + 2) / 2;
-                        if (pairs % 2 === 0 && couponsEarned < pairs / 2) {
-                            onEarnCoupon();
-                            setCouponsEarned(p => p + 1);
-                        }
                     } else {
                         setTimeout(() => setFlipped([]), 1000);
                     }
                 }
-            }, [flipped]);
-
-            useEffect(() => { if (solved.length === 12) setTimeout(onWin, 1000); }, [solved]);
+            }, [flipped, cards]);
 
             return (
-                <div className="fixed inset-0 p-6 flex flex-col items-center z-40 bg-[#16213e]">
-                    <div className="text-center mb-8 pt-10">
-                        <h2 className="text-4xl font-black italic mb-2">記憶挑戰 ({couponsEarned}/3)</h2>
-                        <p className="text-xs text-blue-300 font-bold uppercase">兩兩成對 贏取獎勵</p>
+                <div className="fixed inset-0 p-6 flex flex-col bg-[#16213e] z-40 overflow-y-auto">
+                    <div className="text-center mt-12 mb-8">
+                        <h2 className="text-4xl font-black italic mb-2 tracking-tighter">記憶大挑戰</h2>
+                        <p className="text-blue-300 text-[10px] font-bold uppercase tracking-widest">每成功配對 2 對可獲一張券</p>
                     </div>
-                    <div className="grid grid-cols-3 gap-3 w-full max-w-xs flex-1 content-center">
-                        {cards.map((card, i) => (
-                            <div key={i} className="aspect-square perspective-1000 cursor-pointer" onClick={() => flipped.length < 2 && !flipped.includes(i) && !solved.includes(i) && setFlipped(p => [...p, i])}>
-                                <motion.div className="w-full h-full relative preserve-3d" animate={{ rotateY: (flipped.includes(i) || solved.includes(i)) ? 180 : 0 }} transition={{ duration: 0.4 }}>
-                                    <div className="absolute inset-0 backface-hidden glass flex items-center justify-center border-2 border-white/20 rounded-xl bg-white/5">
-                                        <img src={POKEBALL_IMG} referrerPolicy="no-referrer" className="w-8 opacity-40" />
+                    <div className="grid grid-cols-3 gap-3 w-full max-w-sm mx-auto mb-8">
+                        {cards.map((card, i) => {
+                            const isFlipped = flipped.includes(i) || solved.includes(i);
+                            return (
+                                <div key={i} className="aspect-square relative perspective-1000" onClick={() => !isFlipped && flipped.length < 2 && setFlipped(p => [...p, i])}>
+                                    <div className={`card-inner ${isFlipped ? 'is-flipped' : ''}`}>
+                                        <div className="backface-hidden glass flex items-center justify-center p-2 bg-white/5 border-2 border-white/10 rounded-xl">
+                                            <ImgWithFallback src={POKEBALL_IMG} className="w-8 opacity-40" />
+                                        </div>
+                                        <div className="backface-hidden front glass flex items-center justify-center p-2 bg-white/20 border-2 border-yellow-400 rounded-xl">
+                                            <ImgWithFallback src={card.img} className="w-full h-full object-contain" />
+                                        </div>
                                     </div>
-                                    <div className="absolute inset-0 backface-hidden [transform:rotateY(180deg)] glass flex items-center justify-center border-2 border-yellow-400 rounded-xl bg-white/20">
-                                        <img src={card.img} referrerPolicy="no-referrer" className="w-10 h-10 object-contain" />
-                                    </div>
-                                </motion.div>
-                            </div>
-                        ))}
+                                </div>
+                            );
+                        })}
                     </div>
-                    <button onClick={onBack} className="mb-10 text-white/40 font-bold uppercase tracking-widest text-xs">退出</button>
+                    <button onClick={onBack} className="mb-10 text-white/40 font-bold text-xs uppercase self-center p-4">← 退出</button>
                 </div>
             );
         }
 
-        // --- 關卡 3: 森林尋寶 ---
-        function Level3Eye({ onBack, onWin, onEarnCoupon }) {
+        // --- 組件: 關卡 3 (尋寶) ---
+        function Level3Eye({ onBack, onWin, onEarn }) {
             const [found, setFound] = useState([]);
-            const crowd = useMemo(() => Array.from({length: 60}).map((_, i) => ({
-                id: i, x: Math.random() * 90 + 5, y: Math.random() * 90 + 5, 
-                img: Math.random() > 0.5 ? PIKACHU_IMG : POKEBALL_IMG, rotate: Math.random() * 360, scale: 0.3 + Math.random() * 0.3
+            const crowd = useMemo(() => Array.from({length: 40}).map((_, i) => ({
+                id: i, x: Math.random() * 90 + 5, y: Math.random() * 90 + 5,
+                img: Math.random() > 0.5 ? PIKACHU_IMG : POKEBALL_IMG,
+                rotate: Math.random() * 360, scale: 0.3 + Math.random() * 0.4
             })), []);
             const targets = useMemo(() => [
-                { id: 0, x: 20, y: 70 }, { id: 1, x: 80, y: 30 }, { id: 2, x: 50, y: 50 }, { id: 3, x: 15, y: 20 }
+                {id: 0, x: 15, y: 75}, {id: 1, x: 85, y: 25}, {id: 2, x: 55, y: 45}, {id: 3, x: 25, y: 35}
             ], []);
 
-            useEffect(() => { if (found.length === 4) setTimeout(onWin, 1000); }, [found]);
-
-            const clickTarget = (id) => {
-                if (!found.includes(id)) { setFound(p => [...p, id]); onEarnCoupon(); }
+            const handleClick = (id) => {
+                if (!found.includes(id)) {
+                    setFound(p => {
+                        const next = [...p, id];
+                        onEarn();
+                        if (next.length === 4) setTimeout(onWin, 1000);
+                        return next;
+                    });
+                }
             };
 
             return (
-                <div className="fixed inset-0 p-6 flex flex-col z-40 bg-[#16213e]">
-                    <div className="text-center mb-4 pt-10">
-                        <h2 className="text-3xl font-black italic">魔法尋寶 ({found.length}/4)</h2>
-                        <div className="flex items-center justify-center gap-3 mt-3 bg-white/10 p-3 rounded-2xl w-fit mx-auto border border-white/10">
-                            <span className="text-[10px] uppercase font-black opacity-60">目標:</span>
-                            <img src={ULTRABALL_IMG} referrerPolicy="no-referrer" className="w-8 h-8 drop-shadow-[0_0_8px_gold]" />
-                            <span className="text-xs font-black text-yellow-400">閃閃精靈球</span>
+                <div className="fixed inset-0 p-6 flex flex-col bg-[#16213e] z-40">
+                    <div className="text-center mt-12 mb-6">
+                        <h2 className="text-3xl font-black italic tracking-tighter">森林尋寶 ({found.length}/4)</h2>
+                        <div className="flex items-center justify-center gap-3 mt-4 glass p-3 border-white/10 w-fit mx-auto">
+                            <span className="text-[10px] font-black opacity-60">目標:</span>
+                            <ImgWithFallback src={ULTRABALL_IMG} className="w-8 h-8 drop-shadow-[0_0_10px_gold]" />
+                            <span className="text-xs font-black text-yellow-400">閃閃球</span>
                         </div>
                     </div>
-                    <div className="flex-1 glass relative overflow-hidden rounded-[2rem] border-4 border-white/20 bg-black/20">
+                    <div className="flex-1 glass bg-black/30 relative overflow-hidden rounded-[2rem] border-4 border-white/20">
                         {crowd.map(c => (
-                            <img key={c.id} src={c.img} referrerPolicy="no-referrer" style={{ left: `${c.x}%`, top: `${c.y}%`, transform: `rotate(${c.rotate}deg) scale(${c.scale})` }} className="absolute w-20 pointer-events-none opacity-80" />
+                            <div key={c.id} style={{ left: `${c.x}%`, top: `${c.y}%`, transform: `rotate(${c.rotate}deg) scale(${c.scale})` }} className="absolute w-20 opacity-80 pointer-events-none">
+                                <ImgWithFallback src={c.img} className="w-full" />
+                            </div>
                         ))}
                         {targets.map(t => (
-                            <motion.img key={t.id} onClick={() => clickTarget(t.id)} src={ULTRABALL_IMG} referrerPolicy="no-referrer" animate={{ opacity: found.includes(t.id) ? 0.1 : 1, scale: found.includes(t.id) ? 1.5 : 0.4 }} style={{ left: `${t.x}%`, top: `${t.y}%` }} className="absolute w-20 -translate-x-1/2 -translate-y-1/2 cursor-pointer z-20 drop-shadow-xl" />
+                            <div key={t.id} onClick={() => handleClick(t.id)} style={{ left: `${t.x}%`, top: `${t.y}%` }} className={`absolute w-12 -translate-x-1/2 -translate-y-1/2 cursor-pointer z-20 ${found.includes(t.id) ? 'opacity-20 scale-150' : 'opacity-100 scale-100'}`}>
+                                <ImgWithFallback src={ULTRABALL_IMG} className="w-full drop-shadow-xl" />
+                            </div>
                         ))}
                     </div>
-                    <button onClick={onBack} className="my-6 text-white/40 font-bold uppercase tracking-widest text-xs self-center">退出</button>
+                    <button onClick={onBack} className="my-6 text-white/40 font-bold text-xs uppercase self-center">← 退出</button>
                 </div>
             );
         }
 
-        // --- 錢包視圖 ---
+        // --- 組件: 錢包收藏夾 ---
         function WalletView({ saveData, onBack, onRedeem }) {
             const available = saveData.earned - saveData.spent;
             return (
-                <div className="p-6 flex flex-col h-full h-screen overflow-y-auto">
-                    <button onClick={onBack} className="text-white/40 mb-6 font-bold text-xs uppercase self-start">← 返回地圖</button>
-                    <h1 className="text-4xl font-black italic mb-8 tracking-tighter">魔法現金券收藏</h1>
-                    <div className="grid grid-cols-2 gap-4 mb-10">
+                <div className="p-6 pt-16 h-screen flex flex-col overflow-y-auto w-full max-w-lg mx-auto bg-[#1a1a2e]">
+                    <button onClick={onBack} className="p-4 text-white/40 font-bold text-xs uppercase self-start">← 返回</button>
+                    <h1 className="text-4xl font-black italic mb-8 tracking-tighter">魔法券收藏夾</h1>
+                    
+                    <div className="grid grid-cols-2 gap-4 mb-24 pb-10">
                         {COUPON_DATA.map((data, i) => {
                             const isUnlocked = saveData.earned > i;
                             const isSpent = saveData.spent > i;
                             return (
-                                <motion.div key={data.id} className={`relative aspect-[2/1] rounded-lg p-2 flex flex-col items-center justify-center overflow-hidden transition-all duration-500 ${isUnlocked ? data.color : 'bg-gray-800 opacity-40 grayscale'} ${isSpent ? 'opacity-50' : ''}`} whileTap={isUnlocked && !isSpent ? { scale: 0.95 } : {}}>
-                                    <div className={`absolute top-1 left-1 border border-current rounded-full w-4 h-4 text-[6px] font-black flex items-center justify-center ${data.text}`}>88</div>
-                                    <div className="flex w-full items-center justify-between px-2">
-                                        <img src={PIKACHU_IMG} referrerPolicy="no-referrer" className="w-8 h-8 object-contain" />
-                                        <div className={`text-center ${data.text}`}>
-                                            <p className="text-[4px] font-black leading-none">To 契仔Ziv</p>
-                                            <h3 className="text-xl font-black my-0">$88</h3>
-                                            <p className="text-[4px] font-bold italic">From 契爺謙</p>
-                                        </div>
-                                        <div className={`opacity-30 ${data.text} flex flex-col items-center`}>
-                                            <span className="text-lg leading-none">{data.icon}</span>
-                                            <span className="text-[4px] font-mono">{data.serial}</span>
-                                        </div>
+                                <div key={i} className={`relative aspect-[16/9] p-3 rounded-lg overflow-hidden flex flex-col items-center justify-center border transition-all duration-700 ${isUnlocked ? `${data.color} border-white/30 shadow-lg scale-100` : 'bg-gray-800 border-white/10 opacity-30 scale-90 grayscale'} ${isSpent ? 'opacity-50 blur-[0.5px]' : ''}`}>
+                                    <div className={`absolute top-1 left-1 border border-current rounded-full w-4 h-4 flex items-center justify-center font-black text-[6px] ${data.text}`}>88</div>
+                                    <div className="flex w-full items-center justify-between gap-1 overflow-hidden px-1">
+                                         <div className="w-1/3 flex justify-center"><ImgWithFallback src={PIKACHU_IMG} className="w-10" /></div>
+                                         <div className={`flex-1 text-center select-none ${data.text}`}>
+                                             <p className="text-[4px] font-black uppercase leading-tight">To Ziv</p>
+                                             <p className="text-xl font-black leading-none my-0.5">$88</p>
+                                             <p className="text-[4px] font-bold italic scale-75 leading-none">From 謙</p>
+                                         </div>
+                                         <div className={`w-1/4 opacity-30 text-center ${data.text} text-xl`}>{data.icon}</div>
                                     </div>
-                                    {isSpent && <div className="absolute inset-0 bg-red-600/20 flex items-center justify-center backdrop-blur-[1px]"><span className="border-2 border-red-600 px-1 py-0.5 text-red-600 text-[10px] font-black rotate-12">已兌換</span></div>}
-                                    {!isUnlocked && <div className="absolute inset-0 flex items-center justify-center"><span className="text-lg">🔒</span></div>}
-                                </motion.div>
+                                    {!isUnlocked && <div className="absolute inset-0 flex items-center justify-center bg-black/10"><span className="text-3xl">🔒</span></div>}
+                                    {isSpent && <div className="absolute inset-0 flex items-center justify-center p-2"><div className="border-4 border-red-600/60 text-red-600/60 font-black px-4 rotate-12 text-sm uppercase bg-white/5 backdrop-blur-sm">已兌換</div></div>}
+                                </div>
                             );
                         })}
                     </div>
-                    <div className="sticky bottom-0 bg-black/40 backdrop-blur-xl p-6 -mx-6 text-center border-t border-white/20">
-                        <p className="text-blue-300 font-bold uppercase text-xs mb-3 font-mono">目前擁有: {available} 張可兌換券</p>
-                        <button onClick={onRedeem} className={`w-full py-4 rounded-full font-black uppercase text-xl transition-all ${available > 0 ? 'bg-yellow-400 text-black shadow-[0_0_30px_rgba(250,204,21,0.4)]' : 'bg-white/10 text-white/20'}`}>
-                            {available > 0 ? '立即兌換一張' : '去挑戰關卡贏取吧!'}
-                        </button>
+
+                    <div className="fixed bottom-0 left-0 right-0 p-6 glass border-t border-white/10 backdrop-blur-3xl z-30">
+                        <div className="max-w-lg mx-auto">
+                            <p className="text-yellow-400 font-black uppercase text-center text-xs tracking-[0.2em] mb-3">你還有 {available} 張可以使用!</p>
+                            <button onClick={onRedeem} className={`w-full py-4 rounded-full font-black uppercase text-xl shadow-2xl transition-all active:scale-95 ${available > 0 ? 'bg-yellow-400 text-black glow-gold opacity-100' : 'bg-white/10 text-white/20'}`}>
+                                {available > 0 ? '領取禮物吧' : '挑戰關卡贏卡券'}
+                            </button>
+                        </div>
                     </div>
                 </div>
             );
         }
 
-        // --- 最終大驚喜 ---
+        // --- 組件: 最終驚喜 ---
         function FinalView() {
-            useEffect(() => { confetti({ particleCount: 300, spread: 200, origin: { y: 0.5 } }); }, []);
+            useEffect(() => {
+                console.log("🏆 [Game] 任務圓滿達成，祝 Ziv 生日快樂!");
+                confetti({ particleCount: 300, spread: 200, origin: { y: 0.5 } });
+            }, []);
             return (
-                <div className="fixed inset-0 flex flex-col items-center justify-center p-10 bg-black z-[100]">
-                    <motion.div initial={{ scale: 0, rotate: -180 }} animate={{ scale: 1, rotate: 0 }} transition={{ type: 'spring', bounce: 0.5, duration: 2 }}>
-                        <img src={CAKE_IMG} referrerPolicy="no-referrer" className="w-64 h-64 mb-10 drop-shadow-[0_0_50px_rgba(255,255,255,0.4)]" />
-                    </motion.div>
-                    <h1 className="text-5xl font-black text-center italic tracking-tighter text-yellow-400 mb-6">任務圓滿達成!</h1>
-                    <p className="text-xl font-bold text-center text-white/80 max-w-sm">Ziv, 恭喜你成功收集 10 張魔法券! 找契爺拿你的生日大禮吧!</p>
+                <div className="fixed inset-0 flex flex-col items-center justify-center p-10 bg-black z-[100] text-center">
+                    <img src={CAKE_IMG} className="w-64 float-anim mb-10 drop-shadow-[0_0_50px_rgba(255,255,255,0.4)]" />
+                    <h1 className="text-5xl font-black italic tracking-tighter text-yellow-400 mb-6 uppercase">Mission Complete!</h1>
+                    <p className="text-xl font-bold text-white/80 max-w-sm mb-10">Ziv, 你成功收集了 10 張魔法券! 這是給你的 4 歲生日最強獎勵!</p>
+                    <button onClick={() => window.location.reload()} className="px-8 py-3 glass bg-white/10 border-white/20 text-white font-bold rounded-full">重新開始</button>
                 </div>
             );
         }
 
-        createRoot(document.getElementById('root')).render(<App />);
+        // 啟動渲染
+        console.log("✅ [System] React 載入完成，掛載 root 節點...");
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
     </script>
 </body>
 </html>
